@@ -1,0 +1,53 @@
+name: Release Tubo CLI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+        cache-dependency-path: tubo-cli/go.sum
+        
+    - name: Build Binaries
+      run: |
+        cd tubo-cli
+        # Linux
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../tubo-linux-amd64
+        CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o ../tubo-linux-arm64
+        CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -o ../tubo-linux-arm
+        # macOS
+        GOOS=darwin GOARCH=amd64 go build -o ../tubo-darwin-amd64
+        GOOS=darwin GOARCH=arm64 go build -o ../tubo-darwin-arm64
+        # Windows
+        GOOS=windows GOARCH=amd64 go build -o ../tubo-windows-amd64.exe
+
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          tubo-linux-amd64
+          tubo-linux-arm64
+          tubo-linux-arm
+          tubo-darwin-amd64
+          tubo-darwin-arm64
+          tubo-windows-amd64.exe
+
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
