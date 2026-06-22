@@ -122,15 +122,11 @@ This proves Tubo is just standard AES-256-CTR streaming over HTTP!
 
 ## Self-Hosting
 
-The provided open-source server is a lightweight, bare-minimum relay. 
-
-The public relay at `tubo.endlessite.com` runs an optimized version with extra routing logic. The open-source server here is fully functional but stripped down.
-
-Don't want to use our public relay? Run the basic open-source relay in 30 seconds:
+Don't want to use our public relay? Run the open-source relay in 30 seconds:
 
 ```bash
 cd server
-./mvnw clean package
+mvn clean package
 java -jar target/server-1.0.0-SNAPSHOT-fat.jar
 ```
 
