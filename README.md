@@ -195,7 +195,7 @@ No binary touches the disk. It uses `curl` and `openssl` — tools that are alre
 | **E2E Encryption** | ✅ AES-256-CTR | ✅ PAKE + AES |
 | **Self-hostable** | ✅ | ✅ |
 | **Directory transfer** | ✅ | ✅ |
-| **Resumable transfers** | ❌ | ✅ |
+| **Resumable transfers** | ❌ (Planned) | ✅ |
 | **Multiple receivers** | ❌ | ✅ |
 
 Tubo doesn't try to replace croc. Different use case — Tubo is for when you can't or don't want to install anything.

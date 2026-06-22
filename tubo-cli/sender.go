@@ -18,6 +18,7 @@ import (
 )
 
 func runSend() {
+	// TODO: implement resumable transfers (requires checking local file size and sending offset to peer)
 	if len(os.Args) < 3 || os.Args[2] == "--help" || os.Args[2] == "-h" {
 		fmt.Println("Usage: tubo send <file_or_directory> [--compress]")
 		os.Exit(0)
