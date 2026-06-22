@@ -16,18 +16,10 @@
 
 <br>
 
-```
-Machine A                           Machine B
-$ tubo send secret.sql             $ tubo receive e4f2a1-8xZpL9q4-aB3k9Xm2pQ7rT1wZ
-                                   
-⠋ Connecting...                   ⠋ Connecting...
-✓ Ready!                           ✓ Incoming file: secret.sql
-Share this token:                  Receiving: 24.5 MB
-e4f2a1-8xZpL9q4-aB3k9Xm2pQ7rT1wZ  Checksum verified ✓
-                                   File saved to ./secret.sql
-Sending: 100% | 24.5 MB / 24.5 MB
-Transfer complete.
-```
+<p align="center">
+  <img src="docs/demo.gif" width="100%" alt="Tubo Demo" />
+</p>
+
 
 ---
 
@@ -81,9 +73,11 @@ echo "secret message" | tubo send -
 
 ---
 
-## The Zero-Install Trick
+## The POSIX Superpower (Zero-Install)
 
-Are you SSH'd into a locked-down production server where you **can't install binaries**? Just use the one-liner fallback:
+The ultimate goal of Tubo is to work **everywhere**, especially where other tools fail. 
+
+Are you SSH'd into a locked-down production server where you **can't install binaries** (no root, `noexec` mounts, strict corporate policies)? Just use the fallback script:
 
 **Send:**
 ```sh
@@ -95,13 +89,13 @@ curl -sL https://tubo.endlessite.com/run | sh -s send database.sql e4f2a1-8xZpL9
 curl -sL https://tubo.endlessite.com/run | sh -s receive e4f2a1-8xZpL9q4-aB3k9Xm2pQ7rT1wZ
 ```
 
-This uses only `curl` and `openssl` — no binaries are written to disk. Works on any POSIX shell (`dash`, `ash`, `bash`, `zsh`).
+This script does **not** download a binary executable. It relies purely on `curl` and `openssl` — tools that already exist on almost every UNIX system. It runs directly in memory on any POSIX-compliant shell (`sh`, `bash`, `zsh`, `dash`, `ash`) without triggering execution blocks.
 
 **Is `curl | sh` safe?** You can always download the script first with `curl -sL https://tubo.endlessite.com/run -o run.sh`, read the code, then run `sh run.sh receive <token>`. The script is [150 lines of simple shell](run.sh) — we encourage you to audit it.
 
-### The Pure Bash Fallback (No Scripts at all)
+### The Pure Bash Proof (No Scripts at all)
 
-If you don't even want to run our `run.sh` script, you can pipe `curl` directly into `openssl`. 
+If you don't even want to run our `run.sh` wrapper, you can pipe `curl` directly into `openssl`. 
 Given a token `ID-PASSWORD-KEY`, you derive the AES-256 key and IV using SHA-512(KEY). Then you run:
 
 **Send manually:**
@@ -177,7 +171,9 @@ The transfer token format is `ID-PASSWORD-KEY`:
 
 But here's the thing — **you often can't install it**. And that's where Tubo was born:
 
-**The scenario**: You're SSH'd into a production server. You need to pull a log file. You can't install binaries (no root, noexec `/tmp`, corporate policy). With croc, you're stuck. With Tubo:
+**The scenario**: You're SSH'd into a production server. You need to pull a 5GB log file. The `/tmp` partition is mounted as `noexec`. You don't have root. Corporate policy actively blocks the execution of unknown binaries. 
+
+With croc, you are completely stuck. With Tubo:
 
 ```sh
 curl -sL https://tubo.endlessite.com/run | sh -s receive <token>
