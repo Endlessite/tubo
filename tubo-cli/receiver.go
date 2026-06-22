@@ -20,6 +20,7 @@ import (
 )
 
 func runReceive() {
+	// TODO: implement resumable transfers (requires checking local file size and sending offset to peer)
 	server, wsScheme := getServer()
 	httpScheme := "http"
 	if wsScheme == "wss" {
