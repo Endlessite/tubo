@@ -1,0 +1,11 @@
+**/.DS_Store
+.idea/
+*.iml
+.vscode/
+server/target/
+*.class
+*.jar
+tubo-cli/tubo-cli
+tubo-cli/tubo
+*.test
+*.dat
