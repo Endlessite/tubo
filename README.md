@@ -95,7 +95,15 @@ This script does **not** download a binary executable. It relies purely on `curl
 
 ### The Pure Bash Proof (No Scripts at all)
 
-If you don't even want to run our `run.sh` wrapper, you can pipe `curl` directly into `openssl`. 
+If you don't even want to run our `run.sh` wrapper, you can pipe `curl` directly into `openssl`.
+You don't have to remember the exact syntax—just add `--manual` to the CLI:
+
+```bash
+tubo send database.sql --manual
+# Or for receiving: tubo receive <token> --manual
+```
+
+This will print out the exact, pure POSIX shell commands to execute the transfer.
 Given a token `ID-PASSWORD-KEY`, you derive the AES-256 key and IV using SHA-512(KEY). Then you run:
 
 **Send manually:**
