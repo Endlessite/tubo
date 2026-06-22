@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  tubo-relay:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: tubo-relay
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+    restart: unless-stopped
