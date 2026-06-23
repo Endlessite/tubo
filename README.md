@@ -159,9 +159,9 @@ The transfer token format is `ID-PASSWORD-KEY`:
 
 | Part | Purpose | Sent to server? |
 |---|---|---|
-| `ID` | Identifies the session | ✅ |
-| `PASSWORD` | Authenticates both peers | ✅ |
-| `KEY` | E2EE secret for AES-256-CTR | ❌ **Never** |
+| `ID` | Identifies the session | Yes |
+| `PASSWORD` | Authenticates both peers | Yes |
+| `KEY` | E2EE secret for AES-256-CTR | **Never** |
 
 1. One peer creates a session and gets back `ID` + `PASSWORD` from the server
 2. It generates a random `KEY` locally and combines everything into a token
@@ -191,16 +191,16 @@ No binary touches the disk. It uses `curl` and `openssl` — tools that are alre
 
 | | Tubo | croc |
 |---|---|---|
-| **Works without installing anything** | ✅ `curl \| sh` fallback | ❌ Needs binary on both sides |
-| **Works on noexec filesystems** | ✅ Shell script, no binaries | ❌ Needs to execute a binary |
-| **Auditable in 10 minutes** | ✅ ~1200 lines total | ~15,000 lines |
+| **Works without installing anything** | Yes (`curl \| sh` fallback) | No (Needs binary on both sides) |
+| **Works on noexec filesystems** | Yes (Shell script, no binaries) | No (Needs to execute a binary) |
+| **Auditable in 10 minutes** | Yes (~1200 lines total) | ~15,000 lines |
 | **Relay server complexity** | [1 file, ~475 lines](server/src/main/java/com/endlessite/server/MainVerticle.java) | Multi-file Go server |
 | **Protocol** | HTTPS + WebSocket | TCP custom protocol |
-| **E2E Encryption** | ✅ AES-256-CTR | ✅ PAKE + AES |
-| **Self-hostable** | ✅ | ✅ |
-| **Directory transfer** | ✅ | ✅ |
-| **Resumable transfers** | ❌ (Planned) | ✅ |
-| **Multiple receivers** | ❌ | ✅ |
+| **E2E Encryption** | Yes (AES-256-CTR) | Yes (PAKE + AES) |
+| **Self-hostable** | Yes | Yes |
+| **Directory transfer** | Yes | Yes |
+| **Resumable transfers** | No (Planned) | Yes |
+| **Multiple receivers** | No | Yes |
 
 Tubo doesn't try to replace croc. Different use case — Tubo is for when you can't or don't want to install anything.
 

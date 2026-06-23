@@ -21,7 +21,7 @@ fi
 
 BINARY_URL="https://github.com/endlessite/tubo/releases/latest/download/tubo-${OS}-${ARCH}"
 
-# Decide where to install based on permissions
+
 if [ "$(id -u)" -eq 0 ]; then
     INSTALL_DIR="/usr/local/bin"
 else
@@ -45,7 +45,7 @@ echo "[OK] Tubo installed successfully!"
 echo "   Location: $BIN_PATH"
 echo ""
 
-# Check if INSTALL_DIR is in PATH
+
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     echo "[WARNING] $INSTALL_DIR is not in your PATH."
     echo "   To use tubo from anywhere, add this to your ~/.bashrc or ~/.zshrc:"

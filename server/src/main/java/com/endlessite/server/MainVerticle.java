@@ -23,7 +23,7 @@ public class MainVerticle extends VerticleBase {
   private static final String CHARSET = "abcdefghijklmnopqrstuvwxyz0123456789";
   private static final int MAX_ACTIVE_SESSIONS = 10000;
   private static final SecureRandom RANDOM = new SecureRandom();
-  private static final long SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+  private static final long SESSION_TIMEOUT_MS = 10 * 60 * 1000;
   
   private static final String ASCII_LOGO = 
     "  _____       _             \n" +
@@ -35,7 +35,7 @@ public class MainVerticle extends VerticleBase {
     "Tubo - Zero-install End-to-End Encrypted File Transfer\n" +
     "======================================================\n\n";
 
-  // session state
+
   private static class SessionData {
     public final String id;
     public final String password;
@@ -46,8 +46,8 @@ public class MainVerticle extends VerticleBase {
     public ServerWebSocket receiverWs;
     public HttpServerResponse receiverRes; // Set when the receiver is an HTTP GET (curl/script)
     public RoutingContext senderCtx;       // Set when the sender is an HTTP POST (curl/script)
-    public Runnable onStartCallback;       // Resumes paused HTTP POST stream when receiver says "start"
-    public long timerId = -1;              // Timeout timer, cancelled when counterpart joins
+    public Runnable onStartCallback;       // Resumes paused HTTP POST stream on receiver "start"
+    public long timerId = -1;              // Inactivity timeout timer, cancelled when counterpart joins
 
     public SessionData(String id, String password) {
       this.id = id;
@@ -55,14 +55,14 @@ public class MainVerticle extends VerticleBase {
     }
   }
 
-  // Active sessions, keyed by session ID
+
   private final ConcurrentHashMap<String, SessionData> activeSessions = new ConcurrentHashMap<>();
 
   public static void main(String[] args) {
     Vertx vertx = Vertx.vertx();
     vertx.deployVerticle(new MainVerticle());
 
-    // Graceful shutdown: wait up to 30 seconds for active transfers to complete
+    // Graceful shutdown: wait for active transfers
     Runtime.getRuntime().addShutdownHook(new Thread(() -> {
       System.out.println("Received shutdown signal. Waiting for active transfers...");
       CountDownLatch latch = new CountDownLatch(1);
@@ -82,7 +82,7 @@ public class MainVerticle extends VerticleBase {
     return sb.toString();
   }
 
-  // pipe to receiver, handle backpressure
+  // Pipe to receiver with backpressure
   private void forwardBinary(SessionData session, ServerWebSocket senderWs, io.vertx.core.buffer.Buffer buffer) {
     if (session.receiverWs != null) {
       session.receiverWs.writeBinaryMessage(buffer);
@@ -106,7 +106,7 @@ public class MainVerticle extends VerticleBase {
     }
   }
 
-  // sender handlers
+
   private void setupSenderHandlers(SessionData session, ServerWebSocket webSocket) {
     session.senderWs = webSocket;
     webSocket.binaryMessageHandler(buffer -> forwardBinary(session, webSocket, buffer));
@@ -127,7 +127,7 @@ public class MainVerticle extends VerticleBase {
     });
   }
 
-  // receiver handlers
+
   private void setupReceiverHandlers(SessionData session, ServerWebSocket webSocket) {
     session.receiverWs = webSocket;
     webSocket.textMessageHandler(msg -> {
@@ -147,7 +147,7 @@ public class MainVerticle extends VerticleBase {
     });
   }
 
-  // cleanup
+
   private void destroySession(SessionData session, ServerWebSocket self, String sessionId) {
     if (session.senderWs != null && (self == null || session.senderWs != self)) session.senderWs.close();
     if (session.receiverWs != null && (self == null || session.receiverWs != self)) session.receiverWs.close();
@@ -163,7 +163,7 @@ public class MainVerticle extends VerticleBase {
 
     // --- WebSocket Routes ---
 
-    // Create a new session. The initiator (sender or receiver) gets a unique ID and password.
+
     router.route("/ws/create").handler(context -> {
       if (activeSessions.size() >= MAX_ACTIVE_SESSIONS) {
         context.response().setStatusCode(503).end("Server at capacity. Too many active sessions.");
@@ -189,7 +189,7 @@ public class MainVerticle extends VerticleBase {
           destroySession(session, null, sessionId);
         });
 
-        // Send credentials back to the initiating client
+
         JsonObject initMessage = new JsonObject()
           .put("id", sessionId)
           .put("password", sessionPassword);
@@ -208,7 +208,7 @@ public class MainVerticle extends VerticleBase {
       }).onFailure(error -> System.err.println("WebSocket upgrade failed: " + error.getMessage()));
     });
 
-    // Join an existing session by ID and password.
+
     router.route("/ws/join/:sessionId").handler(context -> {
       String sessionId = context.pathParam("sessionId");
       String role = context.request().getParam("role");
@@ -229,7 +229,7 @@ public class MainVerticle extends VerticleBase {
       context.request().toWebSocket().onSuccess(webSocket -> {
         System.out.println("Session JOINED [" + role + "]. ID: " + sessionId);
 
-        // Cancel the inactivity timeout since the counterpart has connected
+
         if (session.timerId != -1) {
           vertx.cancelTimer(session.timerId);
           session.timerId = -1;
@@ -267,7 +267,7 @@ public class MainVerticle extends VerticleBase {
       ctx.response().putHeader("Content-Type", "text/plain").end(help);
     });
 
-    // Static endpoints: serve the shell utility scripts directly from the relay server
+
     router.get("/run").handler(ctx -> {
       ctx.response().putHeader("Content-Type", "text/plain").sendFile("run.sh");
     });
@@ -275,15 +275,15 @@ public class MainVerticle extends VerticleBase {
       ctx.response().putHeader("Content-Type", "text/plain").sendFile("install.sh");
     });
 
-    // GET endpoint: allows curl/scripts to act as a receiver and download the stream.
+
     router.get("/:sessionId").handler(this::handleCurlGet);
     router.get("/:sessionId/:filename").handler(this::handleCurlGet);
 
-    // POST endpoint: allows curl/scripts to act as a sender and upload an encrypted stream.
+
     router.post("/:sessionId").handler(this::handleCurlPost);
     router.post("/:sessionId/:filename").handler(this::handleCurlPost);
 
-    // Read port from environment variable, default to 8080
+
     int port = Integer.parseInt(System.getenv() != null && System.getenv().containsKey("PORT")
       ? System.getenv("PORT") : "8080");
 
@@ -310,19 +310,19 @@ public class MainVerticle extends VerticleBase {
 
     if (!validateBasicAuth(context, session)) return;
 
-    // Cancel inactivity timeout since a receiver has connected
+
     if (session.timerId != -1) {
       vertx.cancelTimer(session.timerId);
       session.timerId = -1;
     }
 
-    // Bind the HTTP response as the receiver for this session
+
     session.receiverRes = context.response();
     context.response().setChunked(true);
     context.response().putHeader("Content-Disposition", "attachment; filename=\"" + session.fileName + "\"");
     context.response().putHeader("Content-Type", "application/octet-stream");
 
-    // HTTP GET has no interactive prompt, so tell the sender to start immediately
+    // HTTP GET starts immediately
     if (session.senderWs != null) {
       session.senderWs.writeTextMessage(new JsonObject().put("status", "start").encode());
     }
@@ -348,13 +348,13 @@ public class MainVerticle extends VerticleBase {
 
     if (!validateBasicAuth(context, session)) return;
 
-    // Cancel inactivity timeout
+
     if (session.timerId != -1) {
       vertx.cancelTimer(session.timerId);
       session.timerId = -1;
     }
 
-    // Determine filename from URL path or header
+    // Determine filename from path or header
     if (pathFileName != null) {
       session.fileName = pathFileName.replaceAll("[\"\\r\\n]", "_");
     } else {
@@ -365,20 +365,20 @@ public class MainVerticle extends VerticleBase {
     // Track sender context to prevent POST connection leak if receiver disconnects
     session.senderCtx = context;
 
-    // Pause the HTTP body stream until the receiver says "start"
+    // Pause stream until receiver starts
     context.request().pause();
     session.onStartCallback = () -> context.request().resume();
 
-    // Notify the receiver that a sender is ready
+
     if (session.receiverWs != null) {
       JsonObject readyMsg = new JsonObject().put("status", "ready").put("filename", session.fileName);
       session.receiverWs.writeTextMessage(readyMsg.encode());
     } else if (session.receiverRes != null) {
-      // Both sides are HTTP — no interactive confirmation, start immediately
+      // Start immediately if both sides are HTTP
       session.onStartCallback.run();
     }
 
-    // Forward body chunks to the receiver (with backpressure)
+
     context.request().handler(buffer -> {
       if (session.receiverWs != null) {
         session.receiverWs.writeBinaryMessage(buffer);

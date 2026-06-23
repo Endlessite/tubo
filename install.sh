@@ -26,7 +26,7 @@ fi
 
 BINARY_URL="https://github.com/endlessite/tubo/releases/latest/download/tubo-${OS}-${ARCH}"
 
-# Decide where to install based on permissions
+
 if [ "$(id -u)" -eq 0 ]; then
     INSTALL_DIR="/usr/local/bin"
 else
@@ -51,7 +51,7 @@ echo "[OK] Tubo installed successfully!"
 echo "   Location: $BIN_PATH"
 echo ""
 
-# Check if INSTALL_DIR is in PATH
+
 if echo "$PATH" | grep -q "$INSTALL_DIR"; then
     echo "Tubo — Transfer files without root, without hassle."
     echo ""

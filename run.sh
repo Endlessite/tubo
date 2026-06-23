@@ -9,7 +9,7 @@ set -e
 
 COMMAND=$1
 
-# Check dependencies
+
 for cmd in curl openssl; do
     if ! command -v $cmd >/dev/null 2>&1; then
         echo "Error: Required command '$cmd' is not installed." >&2
@@ -66,7 +66,7 @@ do_receive() {
         HEADER_FILE=".tubo_header.$$"
         TEMP_FILE=".tubo_data.$$"
         FAIL_FLAG=".tubo_fail.$$"
-        # clean up temp files if we get interrupted
+
         trap 'rm -f "$HEADER_FILE" "$TEMP_FILE" "$FAIL_FLAG"' EXIT
 
         echo "Downloading and decrypting..." >&2
