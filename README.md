@@ -75,7 +75,7 @@ echo "secret message" | tubo send -
 
 ## The POSIX Superpower (Zero-Install)
 
-The ultimate goal of Tubo is to work **everywhere**, especially where other tools fail. 
+Tubo is built to work **everywhere**, especially where other tools fail. 
 
 Are you SSH'd into a locked-down production server where you **can't install binaries** (no root, `noexec` mounts, strict corporate policies)? Just use the fallback script:
 
@@ -95,7 +95,7 @@ This script does **not** download a binary executable. It relies purely on `curl
 
 ### The Pure Bash Proof (No Scripts at all)
 
-If you don't even want to run our `run.sh` wrapper, you can pipe `curl` directly into `openssl`.
+If you don't even want to run the `run.sh` wrapper, you can pipe `curl` directly into `openssl`.
 You don't have to remember the exact syntax—just add `--manual` to the CLI:
 
 ```bash
@@ -124,7 +124,7 @@ This proves Tubo is just standard AES-256-CTR streaming over HTTP!
 
 ## Self-Hosting
 
-Don't want to use our public relay? Run the open-source relay in 30 seconds:
+Don't want to use the public relay? Run the open-source relay in 30 seconds:
 
 ```bash
 cd server
