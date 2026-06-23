@@ -10,8 +10,8 @@
 <h1 align="center">Tubo</h1>
 
 <p align="center">
-  <b>The fastest way to move files between two machines.</b><br>
-  No accounts. No config. No root. End-to-end encrypted. Always.
+  <b>E2E encrypted file transfer for locked-down environments.</b><br>
+  No root. No binaries required. Works on pure POSIX sh. End-to-end encrypted. Always.
 </p>
 
 <br>
