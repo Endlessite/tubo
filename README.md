@@ -10,8 +10,8 @@
 <h1 align="center">Tubo</h1>
 
 <p align="center">
-  <b>E2E encrypted file transfer for locked-down environments.</b><br>
-  No root. No binaries required. Works on pure POSIX sh. End-to-end encrypted. Always.
+  <b>The zero-install file transfer for locked-down servers.</b><br>
+  No root. No binaries. Pure POSIX shell. End-to-end encrypted. Always.
 </p>
 
 <br>
