@@ -3,10 +3,7 @@ package main
 import (
 	"bufio"
 	"compress/gzip"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/sha256"
-	"crypto/sha512"
+	"crypto/hmac"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -36,7 +33,7 @@ func runReceive() {
 	manual := false
 	isStdout := false
 	if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
-		fmt.Println("Usage: tubo receive <token>")
+		fmt.Println("Usage: tubo receive [token] [--stdout]\n\nThe token can also be passed as TUBO_TOKEN=<token>, which keeps it out of `ps`.")
 		os.Exit(0)
 	}
 
@@ -49,6 +46,10 @@ func runReceive() {
 		} else {
 			args = append(args, arg)
 		}
+	}
+
+	if len(args) == 0 && os.Getenv("TUBO_TOKEN") != "" {
+		args = append(args, os.Getenv("TUBO_TOKEN"))
 	}
 
 	if len(args) >= 1 {
@@ -80,37 +81,28 @@ func runReceive() {
 			fatal("Failed to parse Session Data: ", err)
 		}
 
-		e2eeKey = generateRandomKey(44)
+		e2eeKey = generateRandomKey(keyLength)
 		token := fmt.Sprintf("%s-%s-%s", session.ID, session.Password, e2eeKey)
 
-		fmt.Fprintf(os.Stderr, "\nReady! Share this command:\n")
-		fmt.Fprintf(os.Stderr, "tubo send <file_or_directory> %s\n\n", token)
-
-		fmt.Fprintf(os.Stderr, "No Tubo installed? Use this instead:\n")
-		fmt.Fprintf(os.Stderr, "curl -sL %s://%s/run | sh -s send <file> %s\n\n", httpScheme, server, token)
+		fmt.Fprintf(os.Stderr, "\nReady! On the other machine run:\n")
+		fmt.Fprintf(os.Stderr, "  TUBO_TOKEN=%s tubo send <file_or_directory>\n\n", token)
+		fmt.Fprintf(os.Stderr, "Without tubo installed (needs only curl and openssl):\n")
+		fmt.Fprintf(os.Stderr, "  curl -sL %s://%s/run | TUBO_TOKEN=%s sh -s send <file>\n\n", httpScheme, server, token)
 
 		if manual {
-			hash := sha512.Sum512([]byte(e2eeKey))
-			aesKeyHex := hex.EncodeToString(hash[:32])
-			aesIvHex := hex.EncodeToString(hash[32:48])
-			
-			fmt.Fprintf(os.Stderr, "Or do it entirely manually without the script:\n")
-			fmt.Fprintf(os.Stderr, "openssl enc -aes-256-ctr -K %s -iv %s -in <file> > file.enc && curl -s -u \"tubo:%s\" -H \"X-File-Name: <filename>\" --data-binary @file.enc %s://%s/%s\n", aesKeyHex, aesIvHex, session.Password, httpScheme, server, session.ID)
-			fmt.Fprintf(os.Stderr, "(If piping from stdin, use `-in -` for openssl and `--data-binary @-` for curl without creating file.enc)\n\n")
+			fmt.Fprintf(os.Stderr, "Or by hand, with only curl and openssl:\n")
+			fmt.Fprintf(os.Stderr, "%s < <file> | curl -s -X POST -T - -H 'Expect:' -H 'X-File-Name: <name>' -u 'tubo:%s' %s://%s/%s\n\n", manualOpenSSL("-e", e2eeKey), session.Password, httpScheme, server, session.ID)
 		}
 	}
 
-	hash := sha512.Sum512([]byte(e2eeKey))
-	block, err := aes.NewCipher(hash[:32])
-	if err != nil {
-		fatal("Failed to initialize AES cipher: ", err)
-	}
-	stream := cipher.NewCTR(block, hash[32:48])
+	stream := newCipherStream(e2eeKey)
+	mac := newMAC(e2eeKey)
 
 	fmt.Fprintf(os.Stderr, "End-to-End Encryption: ENABLED (AES-256-CTR)\n")
 	fmt.Fprintf(os.Stderr, "Waiting for sender...\n")
 
 	var fileName string
+	var httpSender bool
 	for {
 		_, msg, err := socket.ReadMessage()
 		if err != nil {
@@ -121,14 +113,20 @@ func runReceive() {
 			continue
 		}
 		if srvMsg.Status == "ready" {
-			fileName = srvMsg.Filename
+			fileName = sanitizeFileName(srvMsg.Filename)
+			httpSender = srvMsg.Sender == "http"
 			break
 		}
 	}
 
-	isDir := strings.HasSuffix(fileName, ".tar") || strings.HasSuffix(fileName, ".tar.gz") || strings.HasSuffix(fileName, ".tgz")
+	// A CLI sender names archives *.tar / *.tar.gz and compressed files *.gz.
+	// curl/run.sh senders always send the file as-is.
+	var isDir, isCompressed bool
+	if !httpSender {
+		isDir = strings.HasSuffix(fileName, ".tar") || strings.HasSuffix(fileName, ".tar.gz") || strings.HasSuffix(fileName, ".tgz")
+		isCompressed = strings.HasSuffix(fileName, ".gz") || strings.HasSuffix(fileName, ".tgz")
+	}
 	// TODO: handle symlinks
-	isCompressed := strings.HasSuffix(fileName, ".gz") || strings.HasSuffix(fileName, ".tgz")
 
 	outName := fileName
 	if isDir {
@@ -137,7 +135,12 @@ func runReceive() {
 		outName = strings.TrimSuffix(fileName, ".gz")
 	}
 
+	if isDir && isStdout {
+		fatal("Cannot output a directory to stdout. Please provide a destination path.", nil)
+	}
+
 	if !isStdout {
+		outName = uniqueName(outName)
 		fileInfo, _ := os.Stdin.Stat()
 		isInteractive := (fileInfo.Mode() & os.ModeCharDevice) != 0
 
@@ -163,6 +166,12 @@ func runReceive() {
 				fmt.Fprintf(os.Stderr, "\nIncoming file: %s (non-interactive, saving to default name)\n", outName)
 			}
 		}
+
+		if isDir {
+			if _, err := os.Stat(outName); err == nil {
+				fatal(fmt.Sprintf("Destination ./%s already exists. Remove it or choose another name.", outName), nil)
+			}
+		}
 	}
 
 	startMsg := `{"action": "start"}`
@@ -170,29 +179,48 @@ func runReceive() {
 		fatal("Failed to send start signal: ", err)
 	}
 
-	var meta TransferMeta
-	var isGoSender bool
-	msgType, firstMsg, err := socket.ReadMessage()
-	if err != nil {
-		fatal("Connection closed unexpectedly.")
+	// The CLI sender announces itself with a "stream" message before the data
+	// and ends with a MAC. Anything else is a curl/run.sh sender.
+	var authenticated bool
+	var first []byte
+	for first == nil && !authenticated {
+		msgType, msg, err := socket.ReadMessage()
+		if err != nil {
+			fatal("Connection closed before any data was received.")
+		}
+		if msgType == websocket.BinaryMessage {
+			first = msg
+			break
+		}
+		var streamMsg StreamMessage
+		if json.Unmarshal(msg, &streamMsg) == nil && streamMsg.Type == "stream" {
+			authenticated = true
+			isDir = streamMsg.Directory
+			isCompressed = streamMsg.Compressed
+		}
 	}
 
-	var first []byte
-	if msgType == websocket.TextMessage {
-		isGoSender = true
-		json.Unmarshal(firstMsg, &meta)
-		if meta.Type == "meta" {
-			isDir = meta.Directory
-			isCompressed = meta.Compressed
+	// Write to a temporary name and only move it into place once the
+	// transfer is complete and, for CLI senders, the MAC has been checked.
+	partName := outName + ".tubo-part"
+	cleanup := func() {
+		if !isStdout {
+			os.RemoveAll(partName)
 		}
-	} else if msgType == websocket.BinaryMessage {
-		first = firstMsg
+	}
+	fail := func(msg string) {
+		cleanup()
+		fmt.Fprintf(os.Stderr, "\nError: %s\n", msg)
+		if !isStdout {
+			fmt.Fprintf(os.Stderr, "Nothing was saved.\n")
+		}
+		os.Exit(1)
 	}
 
 	pipeReader, pipeWriter := io.Pipe()
-	hasher := sha256.New()
+	var pipelineErr error
 	var received int64
-	var peerChecksum string
+	var peerMAC string
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -204,7 +232,8 @@ func runReceive() {
 		if isCompressed {
 			gzReader, err := gzip.NewReader(pipeReader)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "\nError: failed to decompress data: %v\n", err)
+				pipelineErr = fmt.Errorf("failed to decompress data: %w", err)
+				pipeReader.CloseWithError(pipelineErr)
 				return
 			}
 			defer gzReader.Close()
@@ -212,91 +241,102 @@ func runReceive() {
 		}
 
 		if isDir {
-			if isStdout {
-				fatal("Cannot output a directory to stdout. Please provide a destination path.", nil)
-			}
-			if err := os.MkdirAll(outName, 0755); err != nil {
-				pipeReader.CloseWithError(err)
-				return
-			}
-			if err := extractTar(inputReader, outName); err != nil {
-				pipeReader.CloseWithError(err)
-				return
-			}
-		} else {
-			var outFile io.WriteCloser
-			if isStdout {
-				outFile = os.Stdout
+			if err := os.MkdirAll(partName, 0755); err != nil {
+				pipelineErr = err
 			} else {
-				var err error
-				os.Remove(outName)
-				outFile, err = os.Create(outName)
-				if err != nil {
-					pipeReader.CloseWithError(err)
-					return
+				pipelineErr = extractTar(inputReader, partName)
+			}
+		} else if isStdout {
+			_, pipelineErr = io.Copy(os.Stdout, inputReader)
+		} else {
+			outFile, err := os.OpenFile(partName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+			if err != nil {
+				pipelineErr = err
+			} else {
+				_, pipelineErr = io.Copy(outFile, inputReader)
+				if cerr := outFile.Close(); pipelineErr == nil {
+					pipelineErr = cerr
 				}
-				defer outFile.Close()
 			}
-			if _, err := io.Copy(outFile, inputReader); err != nil {
-				pipeReader.CloseWithError(err)
-				return
-			}
+		}
+		if pipelineErr != nil {
+			pipeReader.CloseWithError(pipelineErr)
+		} else {
+			// Drain anything after the end of a gzip/tar stream so the
+			// sender is never blocked and every byte goes through the MAC.
+			io.Copy(io.Discard, pipeReader)
 		}
 	}()
 
-	if first != nil {
-		stream.XORKeyStream(first, first)
-		hasher.Write(first)
-		pipeWriter.Write(first)
-		received += int64(len(first))
+	writeChunk := func(chunk []byte) {
+		mac.Write(chunk)
+		stream.XORKeyStream(chunk, chunk)
+		if _, err := pipeWriter.Write(chunk); err != nil {
+			pipeWriter.Close()
+			wg.Wait()
+			fail(fmt.Sprintf("Writing output failed: %v", pipelineErr))
+		}
+		received += int64(len(chunk))
+		fmt.Fprintf(os.Stderr, "\r%-40s", "Receiving: "+formatBytes(received))
 	}
 
 	fmt.Fprintf(os.Stderr, "Receiving data...\n")
 	// TODO: show progress percentage when we know the total size
 
+	if first != nil {
+		writeChunk(first)
+	}
+
 	for {
 		msgType, message, err := socket.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				fatal("Connection closed unexpectedly during transfer: ", err)
+				pipeWriter.CloseWithError(err)
+				wg.Wait()
+				fail(fmt.Sprintf("The sender disconnected before the transfer finished (%v).", err))
 			}
 			break
 		}
 		if msgType == websocket.BinaryMessage {
-			stream.XORKeyStream(message, message)
-			hasher.Write(message)
-			if _, err := pipeWriter.Write(message); err != nil {
-				fmt.Fprintf(os.Stderr, "\nExtraction pipeline failed: %v\n", err)
-				break
-			}
-			received += int64(len(message))
-			fmt.Fprintf(os.Stderr, "\rReceiving: %s", formatBytes(received))
+			writeChunk(message)
 		} else if msgType == websocket.TextMessage {
-			var checksumMsg ChecksumMessage
-			if err := json.Unmarshal(message, &checksumMsg); err == nil && checksumMsg.Type == "checksum" {
-				peerChecksum = checksumMsg.SHA256
+			var macMsg MACMessage
+			if err := json.Unmarshal(message, &macMsg); err == nil && macMsg.Type == "mac" {
+				peerMAC = macMsg.HMAC
 			}
 		}
 	}
 
 	pipeWriter.Close()
 	wg.Wait()
-
-	if isGoSender && peerChecksum == "" {
-		fatal("Sender disconnected before sending checksum. File is incomplete.", nil)
-	}
-
-	localChecksum := hex.EncodeToString(hasher.Sum(nil))
 	fmt.Fprintf(os.Stderr, "\n")
 
-	if peerChecksum != "" {
-		if localChecksum == peerChecksum {
-			fmt.Fprintf(os.Stderr, "[OK] Checksum verified (SHA-256: %s...)\n", localChecksum[:16])
-		} else {
-			fmt.Fprintf(os.Stderr, "WARNING: Checksum mismatch! The file may be corrupted.\n")
-			fmt.Fprintf(os.Stderr, "  Expected: %s\n", peerChecksum)
-			fmt.Fprintf(os.Stderr, "  Got:      %s\n", localChecksum)
+	if pipelineErr != nil {
+		fail(fmt.Sprintf("Writing output failed: %v", pipelineErr))
+	}
+
+	if authenticated {
+		if peerMAC == "" {
+			fail("The sender disconnected before the transfer finished.")
 		}
+		expected, err := hex.DecodeString(peerMAC)
+		if err != nil || !hmac.Equal(expected, mac.Sum(nil)) {
+			fail("Integrity check failed: the data was modified or corrupted in transit.")
+		}
+		fmt.Fprintf(os.Stderr, "[OK] Integrity verified (HMAC-SHA256)\n")
+	} else {
+		fmt.Fprintf(os.Stderr, "Note: sent with curl/run.sh, so the data is encrypted but its integrity cannot be verified.\n")
+	}
+
+	if isStdout {
+		return
+	}
+
+	if !isDir {
+		os.Remove(outName)
+	}
+	if err := os.Rename(partName, outName); err != nil {
+		fail(fmt.Sprintf("Could not move %s to %s: %v", partName, outName, err))
 	}
 
 	if isDir {

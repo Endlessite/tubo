@@ -15,6 +15,7 @@ type SessionInit struct {
 type ServerMessage struct {
 	Status   string `json:"status"`
 	Filename string `json:"filename"`
+	Sender   string `json:"sender"` // "http" when the sender is curl/run.sh
 }
 
 type TransferMeta struct {
@@ -24,10 +25,22 @@ type TransferMeta struct {
 	Directory  bool   `json:"directory"`
 }
 
-type ChecksumMessage struct {
-	Type   string `json:"type"`
-	SHA256 string `json:"sha256"`
+// StreamMessage is sent by the CLI sender right before the first data frame,
+// so the receiver knows the stream is followed by a MAC.
+type StreamMessage struct {
+	Type       string `json:"type"`
+	Compressed bool   `json:"compressed"`
+	Directory  bool   `json:"directory"`
 }
+
+// MACMessage carries the HMAC-SHA256 of the ciphertext, sent after the last data frame.
+type MACMessage struct {
+	Type string `json:"type"`
+	HMAC string `json:"hmac"`
+}
+
+// Set at build time by goreleaser.
+var version = "dev"
 
 func fatal(msg string, args ...any) {
 	if len(args) > 0 && args[0] != nil {
@@ -85,6 +98,35 @@ func getServer() (string, string) {
 	return serverUrl, wsScheme
 }
 
+// sanitizeFileName reduces a name received from the network to a plain file
+// name, so a malicious sender or relay cannot write outside the current directory.
+func sanitizeFileName(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = filepath.Base(filepath.Clean("/" + name))
+	if name == "/" || name == "." || name == ".." || name == "" {
+		return "download.dat"
+	}
+	return name
+}
+
+// uniqueName returns name, or name.1, name.2, ... if it already exists,
+// so a file chosen by the sender never silently replaces a local one.
+func uniqueName(name string) string {
+	candidate := name
+	for n := 1; ; n++ {
+		if _, err := os.Lstat(candidate); os.IsNotExist(err) {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s.%d", name, n)
+	}
+}
+
+// manualOpenSSL is the openssl invocation shared by run.sh and --manual.
+// The key is passed through the environment so it never shows up in `ps`.
+func manualOpenSSL(mode, key string) string {
+	return fmt.Sprintf("TUBO_KEY='%s' openssl enc %s -aes-256-ctr -pbkdf2 -iter %d -md sha256 -nosalt -pass env:TUBO_KEY", key, mode, kdfIterations)
+}
+
 func formatBytes(bytes int64) string {
 	const unit = 1024
 	if bytes < unit {
@@ -105,9 +147,10 @@ func main() {
 		fmt.Println("  Send a file:       tubo send <file_or_directory> [--compress]")
 		fmt.Println("  Receive a file:    tubo receive <token>")
 		fmt.Println("  Change server:     tubo config server <url>")
+		fmt.Println("  Show version:      tubo version")
 		fmt.Println("")
-		fmt.Println("All transfers are end-to-end encrypted. Always.")
-		fmt.Println("The token is generated automatically — just copy and paste it.")
+		fmt.Println("Either side can start: whoever runs first prints a token for the other.")
+		fmt.Println("Pass the token as TUBO_TOKEN=<token> to keep it out of the process list.")
 		os.Exit(0)
 	}
 
@@ -118,6 +161,8 @@ func main() {
 		runReceive()
 	case "config":
 		runConfig()
+	case "version", "--version", "-v":
+		fmt.Println("tubo", version)
 	default:
 		fmt.Println("Unknown command. Use 'send', 'receive', or 'config'.")
 	}
