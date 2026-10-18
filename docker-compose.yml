@@ -1,0 +1,33 @@
+# Relay behind Caddy, which gets and renews the TLS certificate automatically.
+#
+#   TUBO_DOMAIN=relay.example.com docker compose up -d --build
+#
+# Ports 80 and 443 must be reachable from the internet, and the domain's
+# DNS record must point to this machine.
+services:
+  relay:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      TUBO_DOMAIN: ${TUBO_DOMAIN:-tubo.endlessite.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - relay
+
+volumes:
+  caddy_data:
+  caddy_config:

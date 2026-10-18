@@ -1,0 +1,5 @@
+*
+!server/pom.xml
+!server/src
+!run.sh
+!install.sh
