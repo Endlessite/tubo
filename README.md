@@ -132,7 +132,17 @@ See [SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## Self-hosting the relay
 
-Requires Java 17+ and Maven:
+The simplest way is Docker Compose, which runs the relay behind
+[Caddy](https://caddyserver.com) with an automatic Let's Encrypt certificate:
+
+```sh
+git clone https://github.com/endlessite/tubo && cd tubo
+TUBO_DOMAIN=relay.example.com docker compose up -d --build
+```
+
+The domain must point to the machine, and ports 80 and 443 must be open.
+
+Without Docker you need Java 17+ and Maven:
 
 ```sh
 cd server
@@ -147,7 +157,7 @@ tubo config server https://relay.example.com    # saved in ~/.tuborc
 export TUBO_SERVER=https://relay.example.com      # or per shell, also read by run.sh
 ```
 
-Put it behind a reverse proxy that terminates TLS. Without TLS the contents
+Without Docker, put it behind a reverse proxy that terminates TLS. Without TLS the contents
 are still encrypted, but the session password travels in clear.
 
 ## Compatibility
