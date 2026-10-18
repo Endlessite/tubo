@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache-dependency-path: tubo-cli/go.sum
+
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+        cache: maven
+
+    - name: Go vet and unit tests
+      working-directory: tubo-cli
+      run: |
+        test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+        go vet ./...
+        go test ./...
+        go build -o tubo .
+
+    - name: Build relay
+      working-directory: server
+      run: mvn -B -q package
+
+    - name: End-to-end tests
+      run: |
+        sudo apt-get install -y dash >/dev/null
+        TUBO_JAR=server/target/tubo-server-1.0.0-fat.jar TUBO_BIN=tubo-cli/tubo sh ci/e2e.sh
