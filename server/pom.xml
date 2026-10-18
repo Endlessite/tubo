@@ -65,6 +65,16 @@
   </dependencies>
 
   <build>
+    <!-- Serve the same run.sh / install.sh that live at the repository root -->
+    <resources>
+      <resource>
+        <directory>${project.basedir}/..</directory>
+        <includes>
+          <include>run.sh</include>
+          <include>install.sh</include>
+        </includes>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>

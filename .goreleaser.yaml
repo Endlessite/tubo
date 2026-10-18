@@ -1,0 +1,33 @@
+version: 2
+project_name: tubo
+
+builds:
+  - id: tubo
+    dir: tubo-cli
+    binary: tubo
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64, arm]
+    goarm: ["7"]
+    ignore:
+      - { goos: darwin, goarch: arm }
+      - { goos: windows, goarch: arm }
+      - { goos: windows, goarch: arm64 }
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+# Plain binaries named tubo-<os>-<arch>, which is what install.sh downloads.
+archives:
+  - formats: [binary]
+    name_template: "tubo-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs"
+      - "^ci"

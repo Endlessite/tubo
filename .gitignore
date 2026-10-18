@@ -9,3 +9,4 @@ tubo-cli/tubo-cli
 tubo-cli/tubo
 *.test
 *.dat
+dist/

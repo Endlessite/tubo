@@ -1,211 +1,180 @@
-<p align="center">
-  <br>
-  <img src="https://img.shields.io/github/license/endlessite/tubo?style=flat-square" alt="License">
-  <img src="https://img.shields.io/github/v/release/endlessite/tubo?style=flat-square&color=blue" alt="Release">
-  <img src="https://img.shields.io/github/actions/workflow/status/endlessite/tubo/release.yml?style=flat-square" alt="Build">
-  <img src="https://img.shields.io/badge/zero--install-curl_%7C_sh-brightgreen?style=flat-square" alt="Zero Install">
-  <img src="https://img.shields.io/badge/encryption-AES--256--CTR-blueviolet?style=flat-square" alt="E2EE">
-</p>
+# Tubo
 
-<h1 align="center">Tubo</h1>
+End-to-end encrypted file transfer through a relay, where one of the two
+machines doesn't need anything installed except `curl` and `openssl`.
 
-<p align="center">
-  <b>The zero-install file transfer for locked-down servers.</b><br>
-  No root. No binaries. Pure POSIX shell. End-to-end encrypted. Always.
-</p>
+```
+sender ──(AES-256-CTR ciphertext)──▶ relay ──▶ receiver
+```
 
-<br>
+The relay forwards bytes between the two sides. The encryption key is part of
+the token you share and is never sent to it.
 
-<p align="center">
-  <img src="docs/demo.gif" width="100%" alt="Tubo Demo" />
-</p>
+## When this is useful
 
+Tubo is for moving a file between two machines that can't talk to each other
+directly, when on one side installing a tool is impractical: a container, a CI
+runner, a minimal VM, someone else's laptop. On that side you paste a single
+`curl ... | sh` line, or two commands by hand.
 
----
+If you can already reach one machine from the other over SSH, use `scp` or
+`rsync`. If you can install a tool on both ends, [croc](https://github.com/schollz/croc)
+and [magic-wormhole](https://github.com/magic-wormhole/magic-wormhole) are more
+mature and use a PAKE, so they work with short codes. Tubo doesn't try to
+replace either.
 
-## Why Tubo?
+## Quick start
 
-Most file transfer tools either require accounts (WeTransfer, Google Drive), expose data to the server (scp through a jumphost), or need root to install (rsync, netcat).
-
-Tubo is different:
-
-- **True E2E Encryption** — The server is a blind pipe. It relays encrypted bytes it cannot read. The key never leaves your machines.
-- **Zero-Install Mode** — SSH'd into a production server with no tools? Use `curl | sh`. It works with just `curl` and `openssl`.
-- **No Root, No Accounts** — The binary goes in `~/.local/bin`. No sign-ups, no API keys, no config files.
-- **Directories & Compression** — Stream entire folders on-the-fly with `--compress`. No temporary zip files.
-- **Integrity Verified** — SHA-256 checksum compared automatically after every transfer.
-
----
-
-## Quick Start
-
-### Install (one-liner, no root)
+Install the CLI (a static Go binary, goes into `~/.local/bin`, no root; the
+installer checks it against the release's `checksums.txt`):
 
 ```sh
 curl -sL https://tubo.endlessite.com/get | sh
 ```
 
-### Send a file
+Send a file. Either side can start; whoever starts prints a token for the
+other one:
 
-```bash
-tubo send backup.sql
-```
-
-Copy the token it prints, then on the other machine:
-
-### Receive
-
-```bash
-tubo receive e4f2a1-8xZpL9q4-aB3k9Xm2pQ7rT1wZ
-```
-
-### Send a directory (compressed)
-
-```bash
-tubo send ./my-project --compress
-```
-
-### Pipe from stdin
-
-```bash
-echo "secret message" | tubo send -
-```
-
----
-
-## The POSIX Superpower (Zero-Install)
-
-Tubo is built to work **everywhere**, especially where other tools fail. 
-
-Are you SSH'd into a locked-down production server where you **can't install binaries** (no root, `noexec` mounts, strict corporate policies)? Just use the fallback script:
-
-**Send:**
 ```sh
-curl -sL https://tubo.endlessite.com/run | sh -s send database.sql e4f2a1-8xZpL9q4-aB3k9Xm2pQ7rT1wZ
+$ tubo send backup.sql
+
+Ready! On the other machine run:
+  TUBO_TOKEN=k3x9qa-7fh2m0pd-Vb2cQ8xLr0TzWmA4yN1sEe tubo receive
+
+Without tubo installed (needs only curl and openssl):
+  curl -sL https://tubo.endlessite.com/run | TUBO_TOKEN=k3x9qa-7fh2m0pd-Vb2cQ8xLr0TzWmA4yN1sEe sh -s receive
 ```
 
-**Receive:**
+Other forms:
+
 ```sh
-curl -sL https://tubo.endlessite.com/run | sh -s receive e4f2a1-8xZpL9q4-aB3k9Xm2pQ7rT1wZ
+tubo send ./project --compress   # directory, streamed as tar.gz
+echo "secret" | tubo send -       # from stdin
+tubo receive                      # receiver starts and prints the token
+tubo receive <token> --stdout     # write to stdout
 ```
 
-This script does **not** download a binary executable. It relies purely on `curl` and `openssl` — tools that already exist on almost every UNIX system. It runs directly in memory on any POSIX-compliant shell (`sh`, `bash`, `zsh`, `dash`, `ash`) without triggering execution blocks.
+The token can also be passed as an argument (`tubo receive <token>`). On a
+machine shared with other users, prefer `TUBO_TOKEN=...`: arguments are
+visible to everyone through `ps` while the transfer runs, environment
+variables are not.
 
-**Is `curl | sh` safe?** You can always download the script first with `curl -sL https://tubo.endlessite.com/run -o run.sh`, read the code, then run `sh run.sh receive <token>`. The script is [150 lines of simple shell](run.sh) — we encourage you to audit it.
+## Without installing anything
 
-### The Pure Bash Proof (No Scripts at all)
+[`run.sh`](run.sh) is about 190 lines of POSIX shell that uses only `curl` and
+`openssl` (OpenSSL 1.1.1+ or LibreSSL 2.9+). It is served by the relay at `/run`:
 
-If you don't even want to run the `run.sh` wrapper, you can pipe `curl` directly into `openssl`.
-You don't have to remember the exact syntax—just add `--manual` to the CLI:
-
-```bash
-tubo send database.sql --manual
-# Or for receiving: tubo receive <token> --manual
-```
-
-This will print out the exact, pure POSIX shell commands to execute the transfer.
-Given a token `ID-PASSWORD-KEY`, you derive the AES-256 key and IV using SHA-512(KEY). Then you run:
-
-**Send manually:**
 ```sh
-cat database.sql \
-  | openssl enc -e -aes-256-ctr -K "$AES_KEY" -iv "$AES_IV" \
-  | curl --data-binary @- -H "X-File-Name: database.sql" -u "tubo:$PASSWORD" "https://tubo.endlessite.com/$ID"
+curl -sL https://tubo.endlessite.com/run | TUBO_TOKEN=<token> sh -s receive [output_file|-]
+curl -sL https://tubo.endlessite.com/run | TUBO_TOKEN=<token> sh -s send <file|->
 ```
 
-**Receive manually:**
+You can, and should, download it and read it first:
+
 ```sh
-curl -u "tubo:$PASSWORD" "https://tubo.endlessite.com/$ID" \
-  | openssl enc -d -aes-256-ctr -K "$AES_KEY" -iv "$AES_IV" > database.sql
+curl -sL https://tubo.endlessite.com/run -o run.sh
+TUBO_TOKEN=<token> sh run.sh receive
 ```
-This proves Tubo is just standard AES-256-CTR streaming over HTTP!
 
----
+When receiving, the file is written to a temporary name and only renamed once
+the download completed. A file name chosen by the sender never overwrites an
+existing file (`name`, then `name.1`, `name.2`, ...).
 
-## Self-Hosting
+`tubo send --manual` and `tubo receive --manual` also print the equivalent
+`curl | openssl` pipeline, if you want to do it without any script.
 
-Don't want to use the public relay? Run the open-source relay in 30 seconds:
+## How it works
 
-```bash
+The token has three parts, `ID-PASSWORD-KEY`:
+
+| Part | Purpose | Sent to the relay |
+|---|---|---|
+| `ID` | identifies the session | yes |
+| `PASSWORD` | lets the second peer join that session | yes |
+| `KEY` | 22 random characters (~131 bits), the end-to-end secret | no |
+
+1. The first peer opens a session; the relay returns `ID` and `PASSWORD`.
+2. The peer generates `KEY` locally and prints the token.
+3. The second peer joins with `ID` and `PASSWORD`. The relay pairs the two
+   connections and forwards data. It keeps nothing on disk.
+4. Both sides derive the AES key and IV with
+   `PBKDF2-HMAC-SHA256(KEY, no salt, 10000 iterations)`, which is exactly what
+   `openssl enc -aes-256-ctr -pbkdf2 -iter 10000 -md sha256 -nosalt` does, so
+   the CLI and the shell script interoperate.
+5. Between two CLIs, the sender also sends an HMAC-SHA256 of the ciphertext,
+   keyed with `SHA-256("tubo-mac-v2:" + KEY)`. The receiver checks it before
+   moving the file into place and fails if it doesn't match or is missing.
+
+The CLI talks to the relay over WebSocket, `curl` over plain HTTP(S)
+(`GET /<id>` to receive, `POST /<id>` to send). The relay is a single Vert.x
+file: [`MainVerticle.java`](server/src/main/java/com/endlessite/server/MainVerticle.java).
+
+## Security: what it does and doesn't protect
+
+- **Contents**: encrypted end to end with AES-256-CTR. The relay can't read them.
+- **Integrity between two CLIs**: authenticated with HMAC-SHA256. A modified,
+  truncated or corrupted transfer is rejected and nothing is saved.
+- **Integrity with `run.sh` / `curl`**: *not* authenticated. `openssl enc`
+  has no streaming authenticated mode, so on that path a malicious relay
+  could flip bits in the file without being detected. Interrupted transfers
+  are still detected.
+- **Metadata**: the relay sees the file name, its size, the timing and both
+  IP addresses.
+- **The token is the secret**: anyone who has it can receive the file. There
+  is no PAKE and no confirmation step, so share it over a channel you trust.
+- **No audit**: this hasn't been reviewed by anyone but its author. Don't use
+  it for anything where that matters.
+
+The public relay at `tubo.endlessite.com` is run by me with no guarantees. If
+you don't want to depend on it, run your own (see below).
+
+See [SECURITY.md](SECURITY.md) to report a vulnerability.
+
+## Self-hosting the relay
+
+Requires Java 17+ and Maven:
+
+```sh
 cd server
-mvn clean package
-java -jar target/server-1.0.0-SNAPSHOT-fat.jar
+mvn package
+PORT=8080 java -jar target/tubo-server-1.0.0-fat.jar
 ```
 
-Then point your CLI to it (once):
-
-```bash
-tubo config server your-server.com:8080
-```
-
-The relay server requires Java 17+ and ~10MB of RAM. It stores nothing on disk.
-
-Set the `PORT` environment variable to change the listening port: `PORT=443 java -jar server.jar`
-
----
-
-## How It Works
-
-```
-┌──────────┐       ┌─────────────────┐       ┌──────────────┐
-│  Sender  │──────▶│  Relay Server   │──────▶│   Receiver   │
-│          │       │  (blind pipe)   │       │              │
-│ AES-256  │       │ Cannot decrypt  │       │  AES-256     │
-│ encrypt  │       │ Zero disk I/O   │       │  decrypt     │
-└──────────┘       └─────────────────┘       └──────────────┘
-```
-
-The transfer token format is `ID-PASSWORD-KEY`:
-
-| Part | Purpose | Sent to server? |
-|---|---|---|
-| `ID` | Identifies the session | Yes |
-| `PASSWORD` | Authenticates both peers | Yes |
-| `KEY` | E2EE secret for AES-256-CTR | **Never** |
-
-1. One peer creates a session and gets back `ID` + `PASSWORD` from the server
-2. It generates a random `KEY` locally and combines everything into a token
-3. The other peer connects using the `ID` and `PASSWORD` to authenticate
-4. Data is encrypted with `AES-256-CTR(SHA-512(KEY))` — the server only sees ciphertext
-5. A SHA-256 checksum is compared at the end to verify integrity
-
-**The relay server is intentionally stateless.** It never writes to disk, never logs file contents, and never sees the encryption key. You can verify this yourself — the entire server is [a single Java file](server/src/main/java/com/endlessite/server/MainVerticle.java).
-
----
-
-## Why not just use croc?
-
-[croc](https://github.com/schollz/croc) is a great tool. If you already have it installed on both machines, use it.
-
-But here's the thing — **you often can't install it**. And that's where Tubo was born:
-
-**The scenario**: You're SSH'd into a production server. You need to pull a 5GB log file. The `/tmp` partition is mounted as `noexec`. You don't have root. Corporate policy actively blocks the execution of unknown binaries. 
-
-With croc, you are completely stuck. With Tubo:
+Point the clients to it:
 
 ```sh
-curl -sL https://tubo.endlessite.com/run | sh -s receive <token>
+tubo config server https://relay.example.com    # saved in ~/.tuborc
+export TUBO_SERVER=https://relay.example.com      # or per shell, also read by run.sh
 ```
 
-No binary touches the disk. It uses `curl` and `openssl` — tools that are already there.
+Put it behind a reverse proxy that terminates TLS. Without TLS the contents
+are still encrypted, but the session password travels in clear.
 
-| | Tubo | croc |
-|---|---|---|
-| **Works without installing anything** | Yes (`curl \| sh` fallback) | No (Needs binary on both sides) |
-| **Works on noexec filesystems** | Yes (Shell script, no binaries) | No (Needs to execute a binary) |
-| **Auditable in 10 minutes** | Yes (~1200 lines total) | ~15,000 lines |
-| **Relay server complexity** | [1 file, ~475 lines](server/src/main/java/com/endlessite/server/MainVerticle.java) | Multi-file Go server |
-| **Protocol** | HTTPS + WebSocket | TCP custom protocol |
-| **E2E Encryption** | Yes (AES-256-CTR) | Yes (PAKE + AES) |
-| **Self-hostable** | Yes | Yes |
-| **Directory transfer** | Yes | Yes |
-| **Resumable transfers** | No (Planned) | Yes |
-| **Multiple receivers** | No | Yes |
+## Compatibility
 
-Tubo doesn't try to replace croc. Different use case — Tubo is for when you can't or don't want to install anything.
+Since this version the key derivation (PBKDF2 instead of SHA-512) and the
+integrity check (HMAC instead of a plaintext SHA-256) changed. CLIs from
+`v0.1.0-beta` can't talk to newer ones or to the current `run.sh`: reinstall
+on both sides.
 
----
+## Development
+
+```sh
+cd tubo-cli && go test ./... && go build -o tubo .
+cd server && mvn package
+TUBO_JAR=server/target/tubo-server-1.0.0-fat.jar TUBO_BIN=tubo-cli/tubo sh ci/e2e.sh
+```
+
+`ci/e2e.sh` starts a local relay and runs transfers between the CLI and
+`run.sh` in every direction (with `dash` when available), including an
+interrupted transfer. CI runs the same on every pull request.
+
+`docs/demo.tape` records the demo GIF with [vhs](https://github.com/charmbracelet/vhs)
+and tmux, using a real transfer.
+
+Not done yet: resumable transfers, progress percentage on the receiving side,
+symlinks inside directories.
 
 ## License
 
-MIT — do whatever you want with it.
+MIT

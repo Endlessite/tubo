@@ -45,9 +45,11 @@ public class MainVerticle extends VerticleBase {
     public ServerWebSocket senderWs;
     public ServerWebSocket receiverWs;
     public HttpServerResponse receiverRes; // Set when the receiver is an HTTP GET (curl/script)
+    public RoutingContext receiverCtx;
     public RoutingContext senderCtx;       // Set when the sender is an HTTP POST (curl/script)
     public Runnable onStartCallback;       // Resumes paused HTTP POST stream on receiver "start"
     public long timerId = -1;              // Inactivity timeout timer, cancelled when counterpart joins
+    public boolean closed = false;
 
     public SessionData(String id, String password) {
       this.id = id;
@@ -80,6 +82,24 @@ public class MainVerticle extends VerticleBase {
       sb.append(CHARSET.charAt(RANDOM.nextInt(CHARSET.length())));
     }
     return sb.toString();
+  }
+
+  // Keep only a plain file name; receivers sanitize again on their side.
+  private static String sanitizeFileName(String name) {
+    if (name == null) return "download.dat";
+    name = name.replaceAll("[\"\\r\\n\\x00]", "_");
+    name = name.substring(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1);
+    if (name.length() > 255) name = name.substring(0, 255);
+    if (name.isEmpty() || name.equals(".") || name.equals("..")) return "download.dat";
+    return name;
+  }
+
+  private static String readyMessage(SessionData session) {
+    return new JsonObject()
+      .put("status", "ready")
+      .put("filename", session.fileName)
+      .put("sender", session.senderCtx != null ? "http" : "cli")
+      .encode();
   }
 
   // Pipe to receiver with backpressure
@@ -115,11 +135,10 @@ public class MainVerticle extends VerticleBase {
         JsonObject json = new JsonObject(msg);
         if ("meta".equals(json.getString("type"))) {
           String fname = json.getString("filename");
-          if (fname != null) session.fileName = fname.replaceAll("[\"\\r\\n]", "_");
+          session.fileName = sanitizeFileName(fname);
           session.senderMetaReceived = true;
           if (session.receiverWs != null) {
-            session.receiverWs.writeTextMessage(
-              new JsonObject().put("status", "ready").put("filename", session.fileName).encode());
+            session.receiverWs.writeTextMessage(readyMessage(session));
           }
         }
       } catch (Exception ignored) {}
@@ -148,13 +167,29 @@ public class MainVerticle extends VerticleBase {
   }
 
 
-  private void destroySession(SessionData session, ServerWebSocket self, String sessionId) {
-    if (session.senderWs != null && (self == null || session.senderWs != self)) session.senderWs.close();
-    if (session.receiverWs != null && (self == null || session.receiverWs != self)) session.receiverWs.close();
-    if (session.receiverRes != null) session.receiverRes.end();
-    if (session.senderCtx != null) session.senderCtx.request().connection().close();
-    if (session.timerId != -1) vertx.cancelTimer(session.timerId);
+  // clean = the sender finished normally. Otherwise the receiver must be able to
+  // tell the transfer was cut short: WebSocket receivers get close code 4001,
+  // HTTP receivers get the connection dropped before the final chunk, so curl fails.
+  private void destroySession(SessionData session, ServerWebSocket self, String sessionId, boolean clean) {
+    if (session.closed) return;
+    session.closed = true;
     activeSessions.remove(sessionId);
+    if (session.timerId != -1) vertx.cancelTimer(session.timerId);
+
+    short code = clean ? (short) 1000 : (short) 4001;
+    String reason = clean ? "" : "Peer disconnected";
+    if (session.senderWs != null && session.senderWs != self) session.senderWs.close(code, reason);
+    if (session.receiverWs != null && session.receiverWs != self) session.receiverWs.close(code, reason);
+    if (session.receiverRes != null && !session.receiverRes.ended()) {
+      if (clean) session.receiverRes.end();
+      else session.receiverCtx.request().connection().close();
+    }
+    if (!clean && session.senderCtx != null) session.senderCtx.request().connection().close();
+  }
+
+  private static boolean closedNormallyBySender(SessionData session, ServerWebSocket webSocket) {
+    Short status = webSocket.closeStatusCode();
+    return webSocket == session.senderWs && status != null && status == 1000;
   }
 
   @Override
@@ -186,7 +221,7 @@ public class MainVerticle extends VerticleBase {
 
         session.timerId = vertx.setTimer(SESSION_TIMEOUT_MS, id -> {
           System.out.println("Session " + sessionId + " timed out (no counterpart connected).");
-          destroySession(session, null, sessionId);
+          destroySession(session, null, sessionId, false);
         });
 
 
@@ -203,7 +238,7 @@ public class MainVerticle extends VerticleBase {
 
         webSocket.closeHandler(v -> {
           System.out.println("Session " + sessionId + " closed.");
-          destroySession(session, webSocket, sessionId);
+          destroySession(session, webSocket, sessionId, closedNormallyBySender(session, webSocket));
         });
       }).onFailure(error -> System.err.println("WebSocket upgrade failed: " + error.getMessage()));
     });
@@ -217,7 +252,7 @@ public class MainVerticle extends VerticleBase {
       if (pwd != null && pwd.startsWith("Bearer ")) {
         pwd = pwd.substring(7);
       } else {
-        pwd = context.request().getParam("pwd"); // Fallback for testing/HTTP senders
+        pwd = null;
       }
 
       SessionData session = activeSessions.get(sessionId);
@@ -237,8 +272,7 @@ public class MainVerticle extends VerticleBase {
 
         if ("receiver".equalsIgnoreCase(role)) {
           if (session.senderMetaReceived || session.senderCtx != null || session.receiverRes != null) {
-            webSocket.writeTextMessage(new JsonObject()
-              .put("status", "ready").put("filename", session.fileName).encode());
+            webSocket.writeTextMessage(readyMessage(session));
           }
           setupReceiverHandlers(session, webSocket);
         } else if ("sender".equalsIgnoreCase(role)) {
@@ -247,7 +281,7 @@ public class MainVerticle extends VerticleBase {
 
         webSocket.closeHandler(v -> {
           System.out.println("Session " + sessionId + " closed.");
-          destroySession(session, webSocket, sessionId);
+          destroySession(session, webSocket, sessionId, closedNormallyBySender(session, webSocket));
         });
       });
     });
@@ -318,6 +352,7 @@ public class MainVerticle extends VerticleBase {
 
 
     session.receiverRes = context.response();
+    session.receiverCtx = context;
     context.response().setChunked(true);
     context.response().putHeader("Content-Disposition", "attachment; filename=\"" + session.fileName + "\"");
     context.response().putHeader("Content-Type", "application/octet-stream");
@@ -331,7 +366,7 @@ public class MainVerticle extends VerticleBase {
     }
 
     context.request().connection().closeHandler(v -> {
-      destroySession(session, null, sessionId);
+      destroySession(session, null, sessionId, false);
     });
   }
 
@@ -356,10 +391,10 @@ public class MainVerticle extends VerticleBase {
 
     // Determine filename from path or header
     if (pathFileName != null) {
-      session.fileName = pathFileName.replaceAll("[\"\\r\\n]", "_");
+      session.fileName = sanitizeFileName(pathFileName);
     } else {
       String xFileName = context.request().getHeader("X-File-Name");
-      if (xFileName != null) session.fileName = xFileName.replaceAll("[\"\\r\\n]", "_");
+      if (xFileName != null) session.fileName = sanitizeFileName(xFileName);
     }
 
     // Track sender context to prevent POST connection leak if receiver disconnects
@@ -371,8 +406,7 @@ public class MainVerticle extends VerticleBase {
 
 
     if (session.receiverWs != null) {
-      JsonObject readyMsg = new JsonObject().put("status", "ready").put("filename", session.fileName);
-      session.receiverWs.writeTextMessage(readyMsg.encode());
+      session.receiverWs.writeTextMessage(readyMessage(session));
     } else if (session.receiverRes != null) {
       // Start immediately if both sides are HTTP
       session.onStartCallback.run();
@@ -397,11 +431,11 @@ public class MainVerticle extends VerticleBase {
 
     context.request().endHandler(v -> {
       context.response().setStatusCode(200).end("Transfer complete.\n");
-      destroySession(session, null, sessionId);
+      destroySession(session, null, sessionId, true);
     });
 
     context.request().connection().closeHandler(v -> {
-      destroySession(session, null, sessionId);
+      destroySession(session, null, sessionId, false);
     });
   }
 

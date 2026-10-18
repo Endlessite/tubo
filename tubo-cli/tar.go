@@ -99,7 +99,7 @@ func extractTar(reader io.Reader, destDir string) error {
 				return err
 			}
 			os.Remove(target)
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(header.Mode))
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(header.Mode)&0777)
 			if err != nil {
 				return err
 			}
