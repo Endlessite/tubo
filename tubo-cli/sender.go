@@ -167,7 +167,7 @@ func runSend() {
 
 	fmt.Fprintf(os.Stderr, "Receiver connected! Sending file...\n")
 
-	streamMsg, _ := json.Marshal(StreamMessage{Type: "stream", Compressed: compress, Directory: isDir})
+	streamMsg, _ := json.Marshal(newStreamMessage(compress, isDir, isStdin, totalSize))
 	if err := socket.WriteMessage(websocket.TextMessage, streamMsg); err != nil {
 		fatal("Error sending data to server: ", err)
 	}

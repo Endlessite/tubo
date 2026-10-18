@@ -122,6 +122,7 @@ func runReceive() {
 	// A CLI sender names archives *.tar / *.tar.gz and compressed files *.gz.
 	// curl/run.sh senders always send the file as-is.
 	var isDir, isCompressed bool
+	var totalSize int64
 	if !httpSender {
 		isDir = strings.HasSuffix(fileName, ".tar") || strings.HasSuffix(fileName, ".tar.gz") || strings.HasSuffix(fileName, ".tgz")
 		isCompressed = strings.HasSuffix(fileName, ".gz") || strings.HasSuffix(fileName, ".tgz")
@@ -197,6 +198,7 @@ func runReceive() {
 			authenticated = true
 			isDir = streamMsg.Directory
 			isCompressed = streamMsg.Compressed
+			totalSize = streamMsg.Size
 		}
 	}
 
@@ -277,11 +279,10 @@ func runReceive() {
 			fail(fmt.Sprintf("Writing output failed: %v", pipelineErr))
 		}
 		received += int64(len(chunk))
-		fmt.Fprintf(os.Stderr, "\r%-40s", "Receiving: "+formatBytes(received))
+		fmt.Fprintf(os.Stderr, "\r%-40s", formatProgress("Receiving", received, totalSize))
 	}
 
 	fmt.Fprintf(os.Stderr, "Receiving data...\n")
-	// TODO: show progress percentage when we know the total size
 
 	if first != nil {
 		writeChunk(first)

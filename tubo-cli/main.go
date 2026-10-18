@@ -26,11 +26,20 @@ type TransferMeta struct {
 }
 
 // StreamMessage is sent by the CLI sender right before the first data frame,
-// so the receiver knows the stream is followed by a MAC.
+// so the receiver knows the stream is followed by a MAC. Size is the total
+// number of bytes to expect, or 0 when unknown (stdin, directories).
 type StreamMessage struct {
 	Type       string `json:"type"`
 	Compressed bool   `json:"compressed"`
 	Directory  bool   `json:"directory"`
+	Size       int64  `json:"size"`
+}
+
+func newStreamMessage(compressed, isDir, isStdin bool, size int64) StreamMessage {
+	if isDir || isStdin {
+		size = 0
+	}
+	return StreamMessage{Type: "stream", Compressed: compressed, Directory: isDir, Size: size}
 }
 
 // MACMessage carries the HMAC-SHA256 of the ciphertext, sent after the last data frame.
@@ -138,6 +147,19 @@ func formatBytes(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// formatProgress renders "<label>: 42.0% | 1.2 MB / 2.9 MB", or just the
+// byte count when the total is unknown (0).
+func formatProgress(label string, done, total int64) string {
+	if total <= 0 {
+		return label + ": " + formatBytes(done)
+	}
+	pct := float64(done) / float64(total) * 100
+	if pct > 100 {
+		pct = 100
+	}
+	return fmt.Sprintf("%s: %.1f%% | %s / %s", label, pct, formatBytes(done), formatBytes(total))
 }
 
 func main() {
