@@ -7,6 +7,8 @@ machines doesn't need anything installed except `curl` and `openssl`.
 sender ──(AES-256-CTR ciphertext)──▶ relay ──▶ receiver
 ```
 
+![A real transfer: tubo send on one side, curl | sh receive on the other](docs/demo.gif)
+
 The relay forwards bytes between the two sides. The encryption key is part of
 the token you share and is never sent to it.
 
