@@ -187,6 +187,13 @@ and tmux, using a real transfer.
 Not done yet: resumable transfers, progress percentage on the receiving side,
 symlinks inside directories.
 
+## How it was written
+
+The Go client in `tubo-cli/` was generated with AI. `run.sh` was written by
+hand with help from AI. Both are covered by the unit tests and by
+`ci/e2e.sh`, and the design choices and their limits are described in
+[SECURITY.md](SECURITY.md). If something looks wrong, please open an issue.
+
 ## License
 
 MIT
