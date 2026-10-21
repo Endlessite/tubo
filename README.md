@@ -61,6 +61,25 @@ machine shared with other users, prefer `TUBO_TOKEN=...`: arguments are
 visible to everyone through `ps` while the transfer runs, environment
 variables are not.
 
+## Updating
+
+```sh
+tubo update
+```
+
+It downloads the latest release, checks it against the release's
+`checksums.txt` and replaces the binary. Once a day `tubo send` and
+`tubo receive` check whether a new version exists and print a one-line
+notice; set `TUBO_NO_UPDATE_CHECK=1` to turn that off. Tubo never updates
+itself without you asking.
+
+Versions before 0.2.1 don't have `tubo update`: run the installer again,
+it replaces the old binary.
+
+```sh
+curl -sL https://tubo.endlessite.com/get | sh
+```
+
 ## Without installing anything
 
 [`run.sh`](run.sh) is about 190 lines of POSIX shell that uses only `curl` and
@@ -167,7 +186,7 @@ are still encrypted, but the session password travels in clear.
 Since this version the key derivation (PBKDF2 instead of SHA-512) and the
 integrity check (HMAC instead of a plaintext SHA-256) changed. CLIs from
 `v0.1.0-beta` can't talk to newer ones or to the current `run.sh`: reinstall
-on both sides.
+on both sides (see [Updating](#updating)).
 
 ## Development
 
