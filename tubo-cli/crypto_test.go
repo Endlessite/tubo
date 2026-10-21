@@ -111,3 +111,32 @@ func TestExtractTarStaysInDestination(t *testing.T) {
 		t.Fatal("tar entry escaped the destination directory")
 	}
 }
+
+func TestNewerVersion(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"v0.2.1", "0.2.0", true},
+		{"v0.10.0", "0.9.9", true},
+		{"v1.0.0", "0.99.0", true},
+		{"v0.2.0", "0.2.0", false},
+		{"v0.1.9", "0.2.0", false},
+		{"v0.2.0", "0.2.0-SNAPSHOT-abc", false},
+	}
+	for _, c := range cases {
+		if got := newerVersion(c.a, c.b); got != c.want {
+			t.Errorf("newerVersion(%q, %q) = %v", c.a, c.b, got)
+		}
+	}
+}
+
+func TestFindChecksum(t *testing.T) {
+	sums := "aaa  tubo-linux-amd64\nbbb  tubo-darwin-arm64\n"
+	if got, _ := findChecksum(strings.NewReader(sums), "tubo-darwin-arm64"); got != "bbb" {
+		t.Fatalf("got %q", got)
+	}
+	if _, err := findChecksum(strings.NewReader(sums), "tubo-windows-amd64.exe"); err == nil {
+		t.Fatal("expected an error for a missing asset")
+	}
+}

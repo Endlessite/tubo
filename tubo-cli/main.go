@@ -147,6 +147,7 @@ func main() {
 		fmt.Println("  Send a file:       tubo send <file_or_directory> [--compress]")
 		fmt.Println("  Receive a file:    tubo receive <token>")
 		fmt.Println("  Change server:     tubo config server <url>")
+		fmt.Println("  Update tubo:       tubo update")
 		fmt.Println("  Show version:      tubo version")
 		fmt.Println("")
 		fmt.Println("Either side can start: whoever runs first prints a token for the other.")
@@ -156,15 +157,19 @@ func main() {
 
 	switch os.Args[1] {
 	case "send":
+		checkForUpdate()
 		runSend()
 	case "receive":
+		checkForUpdate()
 		runReceive()
+	case "update":
+		runUpdate()
 	case "config":
 		runConfig()
 	case "version", "--version", "-v":
 		fmt.Println("tubo", version)
 	default:
-		fmt.Println("Unknown command. Use 'send', 'receive', or 'config'.")
+		fmt.Println("Unknown command. Use 'send', 'receive', 'config' or 'update'.")
 	}
 }
 
